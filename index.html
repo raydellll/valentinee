@@ -12,24 +12,33 @@
     video{width:100%;border-radius:12px;display:block;margin-bottom:14px;background:#000}
     h1{color:var(--accent);margin:8px 0;font-size:1.5rem}
     p{color:#333;margin:8px 0;font-size:1rem}
-    .controls{margin-top:14px;display:flex;gap:12px;justify-content:center}
+    .controls{margin-top:14px;display:flex;gap:12px;justify-content:center;align-items:center}
     button{padding:12px 18px;border-radius:999px;border:none;font-size:16px;cursor:pointer;touch-action:manipulation}
     .btn-primary{background:linear-gradient(135deg,#ff4d6d,#ff758f);color:#fff}
     .btn-ghost{background:#f3f3f3;color:#333}
     .hearts{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:1}
     .heart{position:absolute;font-size:20px;animation:rise linear forwards;will-change:transform,opacity}
     @keyframes rise{from{transform:translateY(100vh);opacity:1}to{transform:translateY(-10vh);opacity:0}}
-    @media (max-width:420px){h1{font-size:1.25rem}.card{padding:14px}}
+
+    /* bear emoji styling */
+    .bear { font-size:72px; line-height:1; margin:6px 0 10px; }
+
+    /* letters (Y+V) after celebration */
+    .letters { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; z-index:50; }
+    .letter { font-size:96px; font-weight:700; color:#c77dff; margin: 0 12px; opacity:0; transform:scale(0.6); transition: all 900ms cubic-bezier(.2,.9,.2,1); }
+    .letter.show { opacity:1; transform:scale(1); }
+
+    @media (max-width:420px){h1{font-size:1.25rem}.card{padding:14px}.bear{font-size:48px}.letter{font-size:56px}}
   </style>
 </head>
 <body>
-  <div class="hearts" id="hearts"></div>
+  <div class="hearts" id="hearts" aria-hidden="true"></div>
 
-  <!-- Intro card -->
+  <!-- Intro card: No Skip button per request -->
   <div class="card" id="introCard" aria-hidden="false">
     <video id="introVideo" autoplay muted loop playsinline>
       <source src="yasmin.mp4" type="video/mp4">
-      <!-- If the video file is missing the browser will still see the rest of the page -->
+      Your browser does not support the video tag or the file is not available.
     </video>
 
     <h1>Hi Yasmine</h1>
@@ -37,83 +46,151 @@
 
     <div class="controls">
       <button id="nextBtn" class="btn-primary" aria-label="Next">Next</button>
-      <button id="skipBtn" class="btn-ghost" aria-label="Skip to question">Skip</button>
     </div>
   </div>
 
-  <!-- Question card (hidden until Next/Skip pressed) -->
+  <!-- Question card -->
   <div class="card" id="questionCard" style="display:none" aria-hidden="true">
+    <!-- cute bear -->
+    <div class="bear">🐻</div>
     <h1>Will you be my Valentine?</h1>
-    <p>If yes, press the heart. If not, press the broken heart — I'll still smile. 😊</p>
+    <p id="messageText">If yes, press the heart. If not, press the broken heart — I'll still smile. 😊</p>
 
-    <div class="controls">
+    <div class="controls" id="buttonRow">
       <button id="yesBtn" class="btn-primary">Yes ❤️</button>
       <button id="noBtn" class="btn-ghost">No 💔</button>
     </div>
   </div>
 
+  <div class="letters" id="letters" aria-hidden="true" style="display:none">
+    <div class="letter" id="letterY">Y</div>
+    <div class="letter" id="letterPlus">+</div>
+    <div class="letter" id="letterV">V</div>
+  </div>
+
   <script>
-    // Elements
     const introCard = document.getElementById('introCard');
     const questionCard = document.getElementById('questionCard');
     const nextBtn = document.getElementById('nextBtn');
-    const skipBtn = document.getElementById('skipBtn');
     const yesBtn = document.getElementById('yesBtn');
     const noBtn = document.getElementById('noBtn');
+    const messageText = document.getElementById('messageText');
     const heartsRoot = document.getElementById('hearts');
-    const introVideo = document.getElementById('introVideo');
+    const lettersWrap = document.getElementById('letters');
+    const letterY = document.getElementById('letterY');
+    const letterPlus = document.getElementById('letterPlus');
+    const letterV = document.getElementById('letterV');
 
-    // Small helper: spawn floating symbols
-    function spawnFloating(symbol = '❤️', count = 30, durationBase = 4) {
+    let noCount = 0;
+    let evasive = false;
+    let evadeInterval = null;
+
+    const noMessages = [
+      'Are you sure?',
+      'Think again...',
+      'Please don\'t say no...',
+      'Do you want Victor to die?'
+    ];
+
+    function spawnFloating(symbol = '❤️', count = 30, durationBase = 3.5) {
       for (let i = 0; i < count; i++) {
         const el = document.createElement('div');
         el.className = 'heart';
         el.textContent = symbol;
-        const size = Math.round(14 + Math.random() * 28);
+        const size = Math.round(14 + Math.random() * 30);
         el.style.fontSize = size + 'px';
         el.style.left = (Math.random() * 90) + 'vw';
-        el.style.animationDuration = (durationBase + Math.random() * 4) + 's';
+        el.style.animationDuration = (durationBase + Math.random() * 3) + 's';
         heartsRoot.appendChild(el);
-        // cleanup after animation
         setTimeout(() => { try { el.remove(); } catch(e){} }, (durationBase + 4) * 1000);
       }
     }
 
-    // Move to question card
-    function goToQuestion() {
+    // Move to question when Next is pressed
+    nextBtn.addEventListener('click', () => {
       introCard.style.display = 'none';
       introCard.setAttribute('aria-hidden', 'true');
       questionCard.style.display = 'block';
       questionCard.setAttribute('aria-hidden', 'false');
+      spawnFloating('💞', 14, 3.2);
+    });
 
-      // keep the (muted) video playing if present
-      if (introVideo && typeof introVideo.play === 'function') {
-        introVideo.play().catch(()=>{});
-      }
-
-      // small celebratory burst
-      spawnFloating('💞', 18, 3.5);
+    // No button logic
+    function makeNoEvasive() {
+      evasive = true;
+      // change to absolute positioning inside question card so we can move it
+      noBtn.style.position = 'absolute';
+      noBtn.style.zIndex = 5;
+      // start interval that nudges it occasionally so it keeps moving away
+      if (evadeInterval) clearInterval(evadeInterval);
+      evadeInterval = setInterval(() => moveNoRandom(), 700 + Math.random()*600);
     }
 
-    nextBtn.addEventListener('click', goToQuestion);
-    skipBtn.addEventListener('click', goToQuestion);
+    function moveNoRandom() {
+      const parent = questionCard.getBoundingClientRect();
+      const btn = noBtn.getBoundingClientRect();
+      const padding = 10;
+      const maxLeft = Math.max(0, parent.width - btn.width - padding);
+      const maxTop = Math.max(0, parent.height - btn.height - padding);
+      const left = Math.random() * maxLeft; // relative to parent
+      const top = Math.random() * maxTop;
+      noBtn.style.left = left + 'px';
+      noBtn.style.top = top + 'px';
+    }
 
+    noBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      noCount++;
+
+      // messages
+      const msgIndex = Math.min(noCount - 1, noMessages.length - 1);
+      messageText.textContent = noMessages[msgIndex];
+
+      if (noCount <= 3) {
+        // shrink the No button progressively
+        const scaleDown = Math.max(0.3, 1 - noCount * 0.18);
+        noBtn.style.transform = `scale(${scaleDown})`;
+        // grow the Yes button
+        const yesScale = 1 + noCount * 0.18;
+        yesBtn.style.transform = `scale(${yesScale})`;
+      } else {
+        // after third time, start evasive behavior
+        if (!evasive) makeNoEvasive();
+        // immediate dodge when clicked
+        moveNoRandom();
+      }
+
+      // spawn a broken heart each time
+      spawnFloating('💔', 8, 2.6);
+    });
+
+    // make the No button move away on hover/touchmove once evasive
+    noBtn.addEventListener('mouseenter', () => { if (evasive) moveNoRandom(); });
+    noBtn.addEventListener('touchstart', (e) => { if (evasive) { e.preventDefault(); moveNoRandom(); } });
+
+    // Yes button logic
     yesBtn.addEventListener('click', () => {
+      // stop evasive interval if running
+      if (evadeInterval) { clearInterval(evadeInterval); evadeInterval = null; }
+      // celebration: replace question card with success content (keep last texts)
       questionCard.innerHTML = `\n        <h1>She said YES 💖</h1>\n        <p>Happy Valentine's Day, Yasmine 🌷</p>\n        <p style="font-weight:600; margin-top:10px;">— Yours, Victor ❤️</p>\n        <p style="margin-top:8px; font-size:0.95rem; color:#666;">Take a screenshot to save this moment 📸</p>\n      `;
-      spawnFloating('❤️', 120, 3);
+
+      // letters and flower burst
+      spawnFloating('🌸', 140, 3.2);
+      // delay then show letters Y + V
+      setTimeout(() => {
+        lettersWrap.style.display = 'flex';
+        // animate letters in
+        setTimeout(()=> letterY.classList.add('show'), 120);
+        setTimeout(()=> letterPlus.classList.add('show'), 420);
+        setTimeout(()=> letterV.classList.add('show'), 720);
+        // hide letters after some time
+        setTimeout(()=> { lettersWrap.style.display = 'none'; letterY.classList.remove('show'); letterPlus.classList.remove('show'); letterV.classList.remove('show'); }, 4000);
+      }, 600);
     });
 
-    noBtn.addEventListener('click', () => {
-      noBtn.style.transform = 'scale(0.9)';
-      setTimeout(() => { noBtn.style.transform = ''; }, 450);
-      spawnFloating('💔', 28, 3.5);
-    });
-
-    // gentle background floating effect
+    // gentle ongoing background effect
     setInterval(() => spawnFloating('❤️', 1, 8), 900);
-
-    // accessibility: allow Enter on Next button
-    nextBtn.addEventListener('keyup', (e) => { if (e.key === 'Enter') nextBtn.click(); });
   </script>
 </body>
 </html>
