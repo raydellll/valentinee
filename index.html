@@ -7,39 +7,45 @@
   <style>
     :root{--bg1:#ff9a9e;--bg2:#fad0c4;--accent:#ff4d6d}
     html,body{height:100%;margin:0}
-    body{font-family:system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--bg1),var(--bg2));}
-    .card{background:rgba(255,255,255,0.95);border-radius:20px;padding:20px;max-width:520px;width:92%;box-shadow:0 20px 50px rgba(0,0,0,0.18);text-align:center}
-    video{width:100%;border-radius:12px;display:block;margin-bottom:14px}
-    h1{color:var(--accent);margin:8px 0}
-    p{color:#333;margin:8px 0;font-size:16px}
+    body{font-family:system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--bg1),var(--bg2));padding:18px}
+    .card{background:rgba(255,255,255,0.96);border-radius:18px;padding:18px;max-width:520px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,0.16);text-align:center;position:relative;overflow:hidden}
+    video{width:100%;border-radius:12px;display:block;margin-bottom:14px;background:#000}
+    h1{color:var(--accent);margin:8px 0;font-size:1.5rem}
+    p{color:#333;margin:8px 0;font-size:1rem}
     .controls{margin-top:14px;display:flex;gap:12px;justify-content:center}
-    button{padding:12px 18px;border-radius:999px;border:none;font-size:16px;cursor:pointer}
+    button{padding:12px 18px;border-radius:999px;border:none;font-size:16px;cursor:pointer;touch-action:manipulation}
     .btn-primary{background:linear-gradient(135deg,#ff4d6d,#ff758f);color:#fff}
-    .btn-ghost{background:#f0f0f0;color:#333}
-    .hearts{position:fixed;inset:0;pointer-events:none;overflow:hidden}
-    .heart{position:absolute;font-size:22px;animation:rise linear forwards}
+    .btn-ghost{background:#f3f3f3;color:#333}
+    .hearts{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:1}
+    .heart{position:absolute;font-size:20px;animation:rise linear forwards;will-change:transform,opacity}
     @keyframes rise{from{transform:translateY(100vh);opacity:1}to{transform:translateY(-10vh);opacity:0}}
+    @media (max-width:420px){h1{font-size:1.25rem}.card{padding:14px}}
   </style>
 </head>
 <body>
   <div class="hearts" id="hearts"></div>
 
-  <div class="card" id="intro">
+  <!-- Intro card -->
+  <div class="card" id="introCard" aria-hidden="false">
     <video id="introVideo" autoplay muted loop playsinline>
       <source src="yasmin.mp4" type="video/mp4">
-      <!-- If the video is missing, the user will still see the rest of the page -->
+      <!-- If the video file is missing the browser will still see the rest of the page -->
     </video>
+
     <h1>Hi Yasmine</h1>
     <p id="introText">It's been a long time coming, and I want to ask:</p>
+
     <div class="controls">
-      <button id="nextBtn" class="btn-primary">Next</button>
-      <button id="skipBtn" class="btn-ghost">Skip</button>
+      <button id="nextBtn" class="btn-primary" aria-label="Next">Next</button>
+      <button id="skipBtn" class="btn-ghost" aria-label="Skip to question">Skip</button>
     </div>
   </div>
 
-  <div class="card" id="question" style="display:none">
+  <!-- Question card (hidden until Next/Skip pressed) -->
+  <div class="card" id="questionCard" style="display:none" aria-hidden="true">
     <h1>Will you be my Valentine?</h1>
-    <p>If yes, press the heart. If not, press the broken heart — but watch them float away 😉</p>
+    <p>If yes, press the heart. If not, press the broken heart — I'll still smile. 😊</p>
+
     <div class="controls">
       <button id="yesBtn" class="btn-primary">Yes ❤️</button>
       <button id="noBtn" class="btn-ghost">No 💔</button>
@@ -47,50 +53,67 @@
   </div>
 
   <script>
-    // Simple, robust DOM logic for mobile
-    const introEl = document.getElementById('intro');
-    const questionEl = document.getElementById('question');
+    // Elements
+    const introCard = document.getElementById('introCard');
+    const questionCard = document.getElementById('questionCard');
     const nextBtn = document.getElementById('nextBtn');
     const skipBtn = document.getElementById('skipBtn');
     const yesBtn = document.getElementById('yesBtn');
     const noBtn = document.getElementById('noBtn');
-    const hearts = document.getElementById('hearts');
+    const heartsRoot = document.getElementById('hearts');
+    const introVideo = document.getElementById('introVideo');
 
-    // Move from intro -> question
-    nextBtn.addEventListener('click', () => {
-      introEl.style.display = 'none';
-      questionEl.style.display = 'block';
-      // ensure video keeps playing in background (muted autoplay allowed)
-      const v = document.getElementById('introVideo');
-      if (v && !v.paused) v.play().catch(()=>{});
-      createHeartsBurst();
-    });
+    // Small helper: spawn floating symbols
+    function spawnFloating(symbol = '❤️', count = 30, durationBase = 4) {
+      for (let i = 0; i < count; i++) {
+        const el = document.createElement('div');
+        el.className = 'heart';
+        el.textContent = symbol;
+        const size = Math.round(14 + Math.random() * 28);
+        el.style.fontSize = size + 'px';
+        el.style.left = (Math.random() * 90) + 'vw';
+        el.style.animationDuration = (durationBase + Math.random() * 4) + 's';
+        heartsRoot.appendChild(el);
+        // cleanup after animation
+        setTimeout(() => { try { el.remove(); } catch(e){} }, (durationBase + 4) * 1000);
+      }
+    }
 
-    // Skip goes straight to question
-    skipBtn.addEventListener('click', () => {
-      introEl.style.display = 'none';
-      questionEl.style.display = 'block';
-    });
+    // Move to question card
+    function goToQuestion() {
+      introCard.style.display = 'none';
+      introCard.setAttribute('aria-hidden', 'true');
+      questionCard.style.display = 'block';
+      questionCard.setAttribute('aria-hidden', 'false');
+
+      // keep the (muted) video playing if present
+      if (introVideo && typeof introVideo.play === 'function') {
+        introVideo.play().catch(()=>{});
+      }
+
+      // small celebratory burst
+      spawnFloating('💞', 18, 3.5);
+    }
+
+    nextBtn.addEventListener('click', goToQuestion);
+    skipBtn.addEventListener('click', goToQuestion);
 
     yesBtn.addEventListener('click', () => {
-      // show a celebration message
-      questionEl.innerHTML = `\n        <h1>She said YES 💖</h1>\n        <p>Happy Valentine's Day, Yasmine 🌷</p>\n        <p style="font-weight:600; margin-top:10px;">— Yours, Victor ❤️</p>\n      `;
-      createHeartsBurst(120);
+      questionCard.innerHTML = `\n        <h1>She said YES 💖</h1>\n        <p>Happy Valentine's Day, Yasmine 🌷</p>\n        <p style="font-weight:600; margin-top:10px;">— Yours, Victor ❤️</p>\n        <p style="margin-top:8px; font-size:0.95rem; color:#666;">Take a screenshot to save this moment 📸</p>\n      `;
+      spawnFloating('❤️', 120, 3);
     });
 
     noBtn.addEventListener('click', () => {
-      // playful behavior when No is pressed
-      // briefly shrink the No button and create a few floating broken hearts
-      noBtn.style.transform = 'scale(0.86)';
-      setTimeout(()=> noBtn.style.transform = '', 600);
-      createFloating('💔', 12);
+      noBtn.style.transform = 'scale(0.9)';
+      setTimeout(() => { noBtn.style.transform = ''; }, 450);
+      spawnFloating('💔', 28, 3.5);
     });
 
-    function createFloating(symbol = '❤️', count = 30) {
-      for (let i=0;i<count;i++){\n        const el = document.createElement('div');\n        el.className = 'heart';\n        el.textContent = symbol;\n        const size = 14 + Math.random()*28;\n        el.style.fontSize = size + 'px';\n        el.style.left = Math.random()*100 + 'vw';\n        el.style.animationDuration = (3 + Math.random()*4) + 's';\n        hearts.appendChild(el);\n        setTimeout(()=> el.remove(), 8000);\n      }\n    }\n
-    function createHeartsBurst(count = 40){\n      createFloating('❤️', count);\n    }\n
-    // accessibility: allow Enter on next button from mobile keyboards\n    nextBtn.addEventListener('keyup', (e)=>{ if(e.key === 'Enter') nextBtn.click(); });\n
-    // If user lands on question directly (e.g., link), make sure video element isn't required\n    // Pre-create a small slow heart effect in the background\n    setInterval(()=>{\n      const el = document.createElement('div');\n      el.className = 'heart';\n      el.textContent = '❤️';\n      el.style.fontSize = (12 + Math.random()*18) + 'px';\n      el.style.left = Math.random()*100 + 'vw';\n      el.style.animationDuration = (6 + Math.random()*6) + 's';\n      hearts.appendChild(el);\n      setTimeout(()=> el.remove(), 12000);\n    }, 900);
+    // gentle background floating effect
+    setInterval(() => spawnFloating('❤️', 1, 8), 900);
+
+    // accessibility: allow Enter on Next button
+    nextBtn.addEventListener('keyup', (e) => { if (e.key === 'Enter') nextBtn.click(); });
   </script>
 </body>
 </html>
