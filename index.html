@@ -13,7 +13,7 @@
     h1{color:var(--accent);margin:8px 0;font-size:1.5rem}
     p{color:#333;margin:8px 0;font-size:1rem}
     .controls{margin-top:14px;display:flex;gap:12px;justify-content:center;align-items:center}
-    button{padding:12px 18px;border-radius:999px;border:none;font-size:16px;cursor:pointer;touch-action:manipulation}
+    button{padding:12px 18px;border-radius:999px;border:none;font-size:16px;cursor:pointer;touch-action:manipulation;transition:transform .18s ease,left .3s ease,top .3s ease}
     .btn-primary{background:linear-gradient(135deg,#ff4d6d,#ff758f);color:#fff}
     .btn-ghost{background:#f3f3f3;color:#333}
     .hearts{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:1}
@@ -23,18 +23,17 @@
     /* bear emoji styling */
     .bear { font-size:72px; line-height:1; margin:6px 0 10px; }
 
-    /* letters (Y+V) after celebration */
-    .letters { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; z-index:50; }
-    .letter { font-size:96px; font-weight:700; color:#c77dff; margin: 0 12px; opacity:0; transform:scale(0.6); transition: all 900ms cubic-bezier(.2,.9,.2,1); }
-    .letter.show { opacity:1; transform:scale(1); }
+    /* letters (Y+V) container for flower animation */
+    .lettersCanvasWrap { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; z-index:60; }
+    .flower { position:absolute; transform:translate(-50%,-50%); transition: transform 900ms cubic-bezier(.2,.9,.2,1), opacity 900ms; font-size:18px; will-change: transform, opacity; }
 
-    @media (max-width:420px){h1{font-size:1.25rem}.card{padding:14px}.bear{font-size:48px}.letter{font-size:56px}}
+    @media (max-width:420px){h1{font-size:1.25rem}.card{padding:14px}.bear{font-size:48px}}
   </style>
 </head>
 <body>
   <div class="hearts" id="hearts" aria-hidden="true"></div>
 
-  <!-- Intro card: No Skip button per request -->
+  <!-- Intro card -->
   <div class="card" id="introCard" aria-hidden="false">
     <video id="introVideo" autoplay muted loop playsinline>
       <source src="yasmin.mp4" type="video/mp4">
@@ -51,8 +50,7 @@
 
   <!-- Question card -->
   <div class="card" id="questionCard" style="display:none" aria-hidden="true">
-    <!-- cute bear -->
-    <div class="bear">🐻</div>
+    <div class="bear" aria-hidden="true">🐻</div>
     <h1>Will you be my Valentine?</h1>
     <p id="messageText">If yes, press the heart. If not, press the broken heart — I'll still smile. 😊</p>
 
@@ -62,13 +60,11 @@
     </div>
   </div>
 
-  <div class="letters" id="letters" aria-hidden="true" style="display:none">
-    <div class="letter" id="letterY">Y</div>
-    <div class="letter" id="letterPlus">+</div>
-    <div class="letter" id="letterV">V</div>
-  </div>
+  <!-- overlay for flower-letter animation -->
+  <div class="lettersCanvasWrap" id="lettersWrap" style="display:none"></div>
 
   <script>
+    // DOM references
     const introCard = document.getElementById('introCard');
     const questionCard = document.getElementById('questionCard');
     const nextBtn = document.getElementById('nextBtn');
@@ -76,28 +72,27 @@
     const noBtn = document.getElementById('noBtn');
     const messageText = document.getElementById('messageText');
     const heartsRoot = document.getElementById('hearts');
-    const lettersWrap = document.getElementById('letters');
-    const letterY = document.getElementById('letterY');
-    const letterPlus = document.getElementById('letterPlus');
-    const letterV = document.getElementById('letterV');
+    const lettersWrap = document.getElementById('lettersWrap');
 
     let noCount = 0;
     let evasive = false;
-    let evadeInterval = null;
+    let yesScale = 1;
 
+    // Safe playful messages
     const noMessages = [
       'Are you sure?',
       'Think again...',
-      'Please don\'t say no...',
-      'Do you want Victor to die?'
+      "Please don't say no...",
+      'pretty pretty pretty please'
     ];
 
+    // spawn floating symbols helper
     function spawnFloating(symbol = '❤️', count = 30, durationBase = 3.5) {
       for (let i = 0; i < count; i++) {
         const el = document.createElement('div');
         el.className = 'heart';
         el.textContent = symbol;
-        const size = Math.round(14 + Math.random() * 30);
+        const size = Math.round(12 + Math.random() * 28);
         el.style.fontSize = size + 'px';
         el.style.left = (Math.random() * 90) + 'vw';
         el.style.animationDuration = (durationBase + Math.random() * 3) + 's';
@@ -106,91 +101,207 @@
       }
     }
 
-    // Move to question when Next is pressed
+    // go to question
     nextBtn.addEventListener('click', () => {
       introCard.style.display = 'none';
-      introCard.setAttribute('aria-hidden', 'true');
+      introCard.setAttribute('aria-hidden','true');
       questionCard.style.display = 'block';
-      questionCard.setAttribute('aria-hidden', 'false');
-      spawnFloating('💞', 14, 3.2);
+      questionCard.setAttribute('aria-hidden','false');
+      spawnFloating('💞', 18, 3.2);
+      // ensure layout is stable
+      questionCard.style.position = 'relative';
     });
 
-    // No button logic
-    function makeNoEvasive() {
-      evasive = true;
-      // change to absolute positioning inside question card so we can move it
-      noBtn.style.position = 'absolute';
-      noBtn.style.zIndex = 5;
-      // start interval that nudges it occasionally so it keeps moving away
-      if (evadeInterval) clearInterval(evadeInterval);
-      evadeInterval = setInterval(() => moveNoRandom(), 700 + Math.random()*600);
-    }
-
+    // Move the No button to a random position inside questionCard
     function moveNoRandom() {
       const parent = questionCard.getBoundingClientRect();
       const btn = noBtn.getBoundingClientRect();
-      const padding = 10;
+      const padding = 8;
       const maxLeft = Math.max(0, parent.width - btn.width - padding);
       const maxTop = Math.max(0, parent.height - btn.height - padding);
-      const left = Math.random() * maxLeft; // relative to parent
+      const left = Math.random() * maxLeft;
       const top = Math.random() * maxTop;
       noBtn.style.left = left + 'px';
       noBtn.style.top = top + 'px';
+      // when No moves, increase the Yes button
+      yesScale = Math.min(4, yesScale + 0.12);
+      yesBtn.style.transform = `scale(${yesScale})`;
     }
 
     noBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       noCount++;
-
-      // messages
+      // update message
       const msgIndex = Math.min(noCount - 1, noMessages.length - 1);
       messageText.textContent = noMessages[msgIndex];
 
       if (noCount <= 3) {
-        // shrink the No button progressively
-        const scaleDown = Math.max(0.3, 1 - noCount * 0.18);
+        // shrink No and grow Yes
+        const scaleDown = Math.max(0.28, 1 - noCount * 0.18);
         noBtn.style.transform = `scale(${scaleDown})`;
-        // grow the Yes button
-        const yesScale = 1 + noCount * 0.18;
+        yesScale = 1 + noCount * 0.18;
         yesBtn.style.transform = `scale(${yesScale})`;
       } else {
-        // after third time, start evasive behavior
-        if (!evasive) makeNoEvasive();
-        // immediate dodge when clicked
+        // evasive behavior: No button starts to dodge when clicked, NOT moving on its own
+        if (!evasive) {
+          evasive = true;
+          // position the No button absolutely at its current visual position
+          const parentRect = questionCard.getBoundingClientRect();
+          const btnRect = noBtn.getBoundingClientRect();
+          // compute left/top relative to parent
+          const left = btnRect.left - parentRect.left;
+          const top = btnRect.top - parentRect.top;
+          noBtn.style.position = 'absolute';
+          noBtn.style.left = left + 'px';
+          noBtn.style.top = top + 'px';
+        }
+        // Move/dodge now that it's evasive
         moveNoRandom();
       }
 
-      // spawn a broken heart each time
+      // spawn broken hearts visual
       spawnFloating('💔', 8, 2.6);
     });
 
-    // make the No button move away on hover/touchmove once evasive
-    noBtn.addEventListener('mouseenter', () => { if (evasive) moveNoRandom(); });
-    noBtn.addEventListener('touchstart', (e) => { if (evasive) { e.preventDefault(); moveNoRandom(); } });
+    // also dodge on touchstart if evasive (makes tapping harder)
+    noBtn.addEventListener('touchstart', (e) => {
+      if (evasive) {
+        e.preventDefault(); // prevent double click issues
+        moveNoRandom();
+      }
+    }, {passive:false});
 
-    // Yes button logic
+    // Yes button: celebration -> flowers form letters Y + V
     yesBtn.addEventListener('click', () => {
-      // stop evasive interval if running
-      if (evadeInterval) { clearInterval(evadeInterval); evadeInterval = null; }
-      // celebration: replace question card with success content (keep last texts)
-      questionCard.innerHTML = `\n        <h1>She said YES 💖</h1>\n        <p>Happy Valentine's Day, Yasmine 🌷</p>\n        <p style="font-weight:600; margin-top:10px;">— Yours, Victor ❤️</p>\n        <p style="margin-top:8px; font-size:0.95rem; color:#666;">Take a screenshot to save this moment 📸</p>\n      `;
-
-      // letters and flower burst
-      spawnFloating('🌸', 140, 3.2);
-      // delay then show letters Y + V
-      setTimeout(() => {
-        lettersWrap.style.display = 'flex';
-        // animate letters in
-        setTimeout(()=> letterY.classList.add('show'), 120);
-        setTimeout(()=> letterPlus.classList.add('show'), 420);
-        setTimeout(()=> letterV.classList.add('show'), 720);
-        // hide letters after some time
-        setTimeout(()=> { lettersWrap.style.display = 'none'; letterY.classList.remove('show'); letterPlus.classList.remove('show'); letterV.classList.remove('show'); }, 4000);
-      }, 600);
+      // remove/hide question content and show final message after animation
+      // run flower-to-letters animation
+      runFlowerLetterAnimation(() => {
+        // show final text (keeps last page text)
+        questionCard.innerHTML = `\n        <h1>She said YES 💖</h1>\n        <p>Happy Valentine's Day, Yasmine 🌷</p>\n        <p style="font-weight:600; margin-top:10px;">— Yours, Victor ❤️</p>\n        <p style="margin-top:8px; font-size:0.95rem; color:#666;">Take a screenshot to save this moment 📸</p>\n      `;
+      });
     });
 
-    // gentle ongoing background effect
-    setInterval(() => spawnFloating('❤️', 1, 8), 900);
+    // gentle background floating effect
+    setInterval(() => spawnFloating('❤️', 1, 8), 1000);
+
+    /* Flower -> Letter animation:
+       - create an offscreen canvas, draw a large "Y+V"
+       - sample pixels where text exists
+       - spawn flower emoji elements at random positions, then animate them to sampled positions
+    */
+    function runFlowerLetterAnimation(onComplete) {
+      // Prepare canvas
+      const canvasW = 300;
+      const canvasH = 130;
+      const canvas = document.createElement('canvas');
+      canvas.width = canvasW;
+      canvas.height = canvasH;
+      const ctx = canvas.getContext('2d');
+
+      // draw big text "Y+V"
+      ctx.fillStyle = '#000';
+      ctx.clearRect(0,0,canvasW,canvasH);
+      ctx.font = 'bold 120px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('Y+V', canvasW/2, canvasH/2 + 6);
+
+      // sample pixel positions
+      const img = ctx.getImageData(0,0,canvasW,canvasH).data;
+      const positions = [];
+      const sample = 6; // sample density
+      for (let y=0; y<canvasH; y+=sample) {
+        for (let x=0; x<canvasW; x+=sample) {
+          const idx = (y*canvasW + x) * 4;
+          const alpha = img[idx+3];
+          if (alpha > 128) {
+            positions.push({x, y});
+          }
+        }
+      }
+
+      if (positions.length === 0) {
+        // fallback: just do a big flower burst
+        spawnFloating('🌸', 140, 3.2);
+        setTimeout(onComplete, 1200);
+        return;
+      }
+
+      // map canvas positions to viewport coordinates centered over the page
+      const wrapRect = document.body.getBoundingClientRect();
+      const centerX = window.innerWidth / 2;
+      const centerY = window.innerHeight / 2;
+
+      // scale factor so text fills nicely
+      const targetWidth = Math.min(window.innerWidth * 0.7, 520);
+      const scale = targetWidth / canvasW;
+      const targetHeight = canvasH * scale;
+
+      // Show the overlay
+      lettersWrap.style.display = 'block';
+
+      // create flower elements for a subset of sampled positions (limit to e.g., 220)
+      const maxFlowers = Math.min(positions.length, 220);
+      // randomize selection to make it look organic
+      shuffleArray(positions);
+      const chosen = positions.slice(0, maxFlowers);
+
+      // create elements and animate them
+      let finished = 0;
+      chosen.forEach((pos, i) => {
+        const fx = centerX + (pos.x - canvasW/2) * scale + (Math.random()-0.5)*8;
+        const fy = centerY + (pos.y - canvasH/2) * scale + (Math.random()-0.5)*8;
+
+        const el = document.createElement('div');
+        el.className = 'flower';
+        // random flower emoji
+        const flowers = ['🌸','🌷','💐','🌺','🌼'];
+        el.textContent = flowers[Math.floor(Math.random()*flowers.length)];
+        // start at random corner
+        const startX = Math.random() * window.innerWidth;
+        const startY = window.innerHeight + 40 + Math.random()*120;
+        el.style.left = startX + 'px';
+        el.style.top = startY + 'px';
+        el.style.opacity = '0';
+        el.style.transform = `translate(-50%,-50%) scale(${0.6 + Math.random()*0.8})`;
+        lettersWrap.appendChild(el);
+
+        // force reflow then animate to final pos
+        requestAnimationFrame(() => {
+          el.style.transition = `left ${900 + Math.random()*600}ms cubic-bezier(.2,.9,.2,1), top ${900 + Math.random()*600}ms cubic-bezier(.2,.9,.2,1), opacity 600ms`;
+          el.style.left = fx + 'px';
+          el.style.top = fy + 'px';
+          el.style.opacity = '1';
+        });
+
+        // after arrival, count finished
+        const totalDelay = 1200 + Math.random()*900;
+        setTimeout(() => {
+          finished++;
+          if (finished === chosen.length) {
+            // keep the flower letters visible for a short moment, then call onComplete
+            setTimeout(() => {
+              // optionally fade out the overlay flowers slowly
+              setTimeout(() => {
+                // cleanup overlay
+                while (lettersWrap.firstChild) lettersWrap.removeChild(lettersWrap.firstChild);
+                lettersWrap.style.display = 'none';
+                if (typeof onComplete === 'function') onComplete();
+              }, 900);
+            }, 700);
+          }
+        }, totalDelay);
+      });
+    }
+
+    // Utility: shuffle array
+    function shuffleArray(a) {
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
   </script>
 </body>
 </html>
